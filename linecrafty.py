@@ -4,7 +4,7 @@ Pipeline:
   1. FLUX.1 Kontext dev (via a headless ComfyUI) redraws the picture as line art.
   2. 4x-AnimeSharp upscales it 4x.
   3. Cleanup: grey -> pure black/white, specks removed  -> <name>_lineart.png
-  4. vtracer traces it to vectors                        -> <name>_lineart.svg
+  4. With --svg, vtracer traces it to vectors            -> <name>_lineart.svg
 
 Usage:
   linecrafty                                convert everything in input\ (then moved to input\done)
@@ -12,6 +12,7 @@ Usage:
   linecrafty some\folder                    convert every image in a folder
   linecrafty photo.jpg --variants 3         3 different takes (different seeds)
   linecrafty photo.jpg --style all          full + simple + no-background versions
+  linecrafty photo.jpg --svg                also write a vector SVG
   linecrafty --stop                         stop a server left running with --keep-server
 
 Runs with ComfyUI's own Python. setup.cmd writes config.json (where ComfyUI is) and installs
@@ -250,25 +251,91 @@ def collect(inputs: list[str]) -> list[Path]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Turn color pictures into coloring-book pages.")
-    ap.add_argument("inputs", nargs="*", help="image files or folders (default: the input folder)")
-    ap.add_argument("-o", "--out", default=str(ROOT / "output"), help="output folder (default: output\\)")
-    ap.add_argument("-s", "--style", default="full",
-                    help="full (default), simple, nobg, a comma list like full,nobg, or 'all'")
-    ap.add_argument("--variants", type=int, default=1, help="how many takes per image (different seeds)")
-    ap.add_argument("--seed", type=int, default=None, help="fixed seed (default: random)")
-    ap.add_argument("--steps", type=int, default=24)
-    ap.add_argument("--guidance", type=float, default=2.5)
-    ap.add_argument("--prompt", default=None, help="replace the whole instruction prompt (ignores --style)")
-    ap.add_argument("--extra", default="", help="text appended to the prompt, e.g. 'leave out the dog'")
-    ap.add_argument("--black", type=int, default=90, help="cleanup: grey at or below this becomes ink")
-    ap.add_argument("--white", type=int, default=200, help="cleanup: grey at or above this becomes paper")
-    ap.add_argument("--speck", type=int, default=60, help="cleanup: remove ink blobs smaller than N pixels")
-    ap.add_argument("--no-svg", action="store_true")
-    ap.add_argument("--open", action="store_true", help="open the output folder when done")
-    ap.add_argument("--keep-server", action="store_true", help="leave the engine running for faster next run")
-    ap.add_argument("--stop", action="store_true", help="stop a server left running and exit")
+    ap = argparse.ArgumentParser(
+        prog="linecrafty",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Turn color pictures into coloring-book pages using local AI (runs on this PC).\n"
+                    "For each picture it writes <name>_lineart.png (the page to print) and <name>_raw.png\n"
+                    "(the model's direct output) to the output folder.",
+        epilog="examples:\n"
+               "  linecrafty                                 convert everything in the input folder\n"
+               "  linecrafty photo.jpg                       one picture, full style\n"
+               "  linecrafty photo.jpg --style all --svg     all three styles, plus SVG files\n"
+               "  linecrafty photo.jpg --variants 3          three different takes to choose from\n"
+               '  linecrafty photo.jpg --extra "Leave out the dog."\n'
+               "  linecrafty C:\\pics -o C:\\pages             a whole folder into another folder\n"
+               "  linecrafty --stop                          unload a server kept with --keep-server",
+    )
+    ap.add_argument("inputs", nargs="*", metavar="PICTURE",
+                    help="picture files (png, jpg, webp, bmp) and/or folders of them. "
+                         "If none are given, converts everything in the input folder and then moves "
+                         "those pictures to input\\done.")
+
+    g = ap.add_argument_group("output")
+    g.add_argument("-o", "--out", metavar="FOLDER", default=str(ROOT / "output"),
+                   help="folder to write pages into (created if missing). Default: the output folder "
+                        "next to this script.")
+    g.add_argument("-s", "--style", metavar="STYLE", default="full",
+                   help="full = characters plus the whole background (default); "
+                        "simple = fewer, bolder lines for little kids (~1 min/page); "
+                        "nobg = just the characters on white. "
+                        "Combine with commas (full,nobg) or use 'all' for one page of each.")
+    g.add_argument("--variants", metavar="N", type=int, default=1,
+                   help="how many different takes to draw per picture and style, each with its own seed; "
+                        "files get _v1, _v2... added. Example: --variants 3. Default: 1.")
+    g.add_argument("--svg", action="store_true",
+                   help="also write <name>_lineart.svg, a vector version that stays sharp at any size "
+                        "(posters, editing in Inkscape/Illustrator). Adds a few seconds per page. "
+                        "Off by default.")
+    g.add_argument("--open", action="store_true",
+                   help="open the output folder in Explorer when finished.")
+
+    g = ap.add_argument_group("drawing (what the local AI draws)")
+    g.add_argument("--extra", metavar='"TEXT"', default="",
+                   help="an extra instruction in plain English, added to the end of the built-in prompt. "
+                        'Put it in quotes. Example: --extra "Leave out the dog." or '
+                        '--extra "Give her a crown."')
+    g.add_argument("--prompt", metavar='"TEXT"', default=None,
+                   help="replace the whole built-in instruction with your own (advanced; --style is "
+                        "then ignored). Example: --prompt \"Turn this into a coloring page of a "
+                        "stained-glass window.\"")
+    g.add_argument("--seed", metavar="N", type=int, default=None,
+                   help="any whole number (0 to 4294967295). The same picture + seed + settings gives "
+                        "the same page again, so you can reproduce one you liked (each page's seed is "
+                        "printed while it runs). Default: random every run.")
+    g.add_argument("--steps", metavar="N", type=int, default=24,
+                   help="how many refinement passes the model makes. More = slightly cleaner lines but "
+                        "proportionally slower; fewer = faster but rougher. Useful range 16-32. "
+                        "Example: --steps 16 for quick drafts. Default: 24.")
+    g.add_argument("--guidance", metavar="N", type=float, default=2.5,
+                   help="how strictly the model follows the instruction (a decimal number). Higher = "
+                        "follows the coloring-page instruction more literally; lower = looser and "
+                        "closer to the original picture. Useful range 1.5-4.0. Example: --guidance 3.5 "
+                        "if some color or shading sneaks through. Default: 2.5.")
+
+    g = ap.add_argument_group("cleanup (applied to the drawing afterwards)")
+    g.add_argument("--black", metavar="0-255", type=int, default=90,
+                   help="brightness level, from 0 (black) to 255 (white). Anything at least this dark "
+                        "becomes solid black ink. Raise it (e.g. 120) to make faint lines darker and bolder. "
+                        "Default: 90.")
+    g.add_argument("--white", metavar="0-255", type=int, default=200,
+                   help="brightness level, from 0 (black) to 255 (white). Anything at least this light "
+                        "becomes pure white paper. Lower it (e.g. 170) to wipe out light grey smudges and "
+                        "faint background lines. Must be above --black. Default: 200.")
+    g.add_argument("--speck", metavar="PIXELS", type=int, default=60,
+                   help="remove isolated ink dots smaller than this many pixels (on the upscaled ~3328x4992 "
+                        "page; 60 px is about a 0.5 mm dot when printed on letter paper). Raise it "
+                        "(e.g. 200) to clear more dust; 0 keeps everything. Default: 60.")
+
+    g = ap.add_argument_group("engine (the hidden ComfyUI that runs the local AI)")
+    g.add_argument("--keep-server", action="store_true",
+                   help="leave the engine running with the models loaded after this run, so the next run "
+                        "skips the ~30 s startup. Uses a lot of memory until you run --stop.")
+    g.add_argument("--stop", action="store_true",
+                   help="stop an engine left running by --keep-server, free its memory, and exit.")
     a = ap.parse_args()
+    if not 0 <= a.black < a.white <= 255:
+        ap.error("--black and --white must be between 0 and 255, with --black below --white")
 
     if a.stop:
         stop_server()
@@ -317,7 +384,7 @@ def main() -> None:
             clean = clean_lineart(res["save_up"], a.black, a.white, a.speck)
             png = out_dir / f"{stem}_lineart.png"
             Image.fromarray(clean).save(png, dpi=(600, 600))
-            if not a.no_svg and not to_svg(png, out_dir / f"{stem}_lineart.svg") and not svg_warned:
+            if a.svg and not to_svg(png, out_dir / f"{stem}_lineart.svg") and not svg_warned:
                 print(" (SVG skipped: vtracer not installed; re-run setup.cmd)", end="")
                 svg_warned = True
             for p in res.values():

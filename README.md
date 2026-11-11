@@ -6,8 +6,8 @@ involved. After setup, it doesn't even need the internet.
 
 It isn't an edge-detection filter. A local AI image-editing model (**FLUX.1 Kontext [dev]**, run on
 your own graphics card through [ComfyUI](https://www.comfy.org)) redraws the picture as line art the way a coloring-book artist would:
-closed shapes, smooth outlines, no shading. The result is then upscaled 4x, cleaned to pure black on
-white, and traced to a vector SVG so it prints sharp at any size.
+closed shapes, smooth outlines, no shading. The result is then upscaled 4x and cleaned to pure black
+on white, ready to print. It can also trace it to a vector SVG that stays sharp at any size.
 
 Three styles:
 
@@ -65,8 +65,8 @@ A page takes about 2-4 minutes (simple: about 1 minute) on an 8 GB card. When it
 | File | |
 |---|---|
 | `name_lineart.png` | The coloring page, 3328x4992. Print this one. |
-| `name_lineart.svg` | Vector version, sharp at any size |
 | `name_raw.png` | The local AI's direct output, before cleanup |
+| `name_lineart.svg` | Only with `--svg` (command line): vector version, sharp at any size |
 
 Every run draws a slightly different version, so if you don't like one, run it again.
 
@@ -78,14 +78,24 @@ Every run draws a slightly different version, so if you don't like one, run it a
 linecrafty.cmd photo.jpg                       :: full style -> output\
 linecrafty.cmd photo.jpg --style all           :: full + simple + nobg
 linecrafty.cmd photo.jpg --variants 3          :: three different takes
+linecrafty.cmd photo.jpg --svg                 :: also write a vector SVG
 linecrafty.cmd photo.jpg --extra "Leave out the dog."
 linecrafty.cmd C:\pics -o C:\pages             :: a whole folder
 linecrafty.cmd photo.jpg --keep-server         :: keep models loaded; later runs start faster
 linecrafty.cmd --stop                          :: unload them
 ```
 
-Cleanup knobs: `--black 90 --white 200` (levels), `--speck 60` (smallest ink blob kept, in pixels).
-Generation knobs: `--steps 24 --guidance 2.5 --seed N`.
+Fine-tuning:
+
+| Option | Default | What it does |
+|---|---|---|
+| `--extra "TEXT"` | none | Extra plain-English instruction, e.g. `--extra "Give her a crown."` |
+| `--seed N` | random | Same picture + seed + settings = same page again |
+| `--steps N` | 24 | Refinement passes, 16-32. Fewer = faster drafts, more = slightly cleaner |
+| `--guidance N` | 2.5 | How literally the instruction is followed, 1.5-4.0. Raise it if color or shading sneaks through |
+| `--black 0-255` | 90 | Brightness (0 = black, 255 = white) at or below which grey becomes solid ink. Raise for bolder lines |
+| `--white 0-255` | 200 | Brightness at or above which grey becomes white paper. Lower it to wipe out faint smudges |
+| `--speck PIXELS` | 60 | Removes isolated ink dots smaller than this many pixels (60 px is about 0.5 mm printed) |
 
 ## How it works
 
@@ -96,7 +106,7 @@ Generation knobs: `--steps 24 --guidance 2.5 --seed N`.
    `linecrafty.py`). "simple" also runs at ~0.3 MP, because the model ignores "use fewer lines" but
    can't fit fine detail into fewer pixels.
 3. 4x-AnimeSharp upscales the result 4x.
-4. Levels push grey to pure black or white, small specks are removed, and vtracer traces the SVG.
+4. Levels push grey to pure black or white, small specks are removed, and with `--svg` vtracer traces the SVG.
 
 `config.json` (written by setup) records which ComfyUI to use. Re-run `setup.cmd` if you move or
 reinstall ComfyUI, or point it somewhere specific: `setup.cmd "D:\ComfyUI_windows_portable"`.
