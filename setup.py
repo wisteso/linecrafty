@@ -4,7 +4,7 @@
 Safe to re-run any time (skips what is already done, resumes interrupted downloads).
 Works on Windows, Linux and macOS with any Python 3.8+ (standard library only).
 
-Usage: python setup.py [-y] [path/to/ComfyUI]
+Usage: python setup.py [-y] [path/to/ComfyUI]     (Windows: launcher-windows\\setup.cmd [-y] [path])
   -y, --yes     don't ask before downloading
   path          your ComfyUI folder (the one containing main.py, or its parent)
 """
@@ -466,15 +466,19 @@ def run(comfy_path: str | None) -> None:
     step("Saving settings")
     cfg = {"comfy_dir": str(pick["dir"]), "python": str(pick["python"]), "extra_model_dirs": pick["extra"]}
     (ROOT / "config.json").write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+    if IS_WINDOWS:  # the launcher-windows .cmd files read this, since cmd can't parse JSON
+        (ROOT / "python_path.txt").write_text(str(pick["python"]), encoding="utf-8")
     for d in ("input", "output"):
         (ROOT / d).mkdir(exist_ok=True)
     ok("Done")
 
-    launcher = Path("launchers") / "make_coloring_page.py"
     print("\n" + _c("32", "  All set!"))
-    print(f"  Run:  python {launcher} photo.jpg      (or put pictures in 'input' and run it with no pictures)")
     if IS_WINDOWS:
-        print(f"  Or drag pictures onto '{launcher}' in File Explorer.")
+        print("  Drag pictures onto 'Make Coloring Page.cmd' in the launcher-windows folder,")
+        print("  or put pictures in the 'input' folder and double-click it.")
+    else:
+        launcher = Path("launcher-common") / "make_coloring_page.py"
+        print(f"  Run:  python3 {launcher} photo.jpg      (or put pictures in 'input' and run it with no pictures)")
     print("  Each page takes about 2-4 minutes. Finished pages appear in the 'output' folder.\n")
 
 

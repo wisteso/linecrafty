@@ -19,8 +19,9 @@ Three styles:
 
 ## What you need
 
-- Windows 10/11 or Linux, with **Python 3.8 or newer** to run setup (get it from
-  [python.org](https://www.python.org/downloads/); on Windows tick "Add python.exe to PATH")
+- Windows 10/11 or Linux
+  - Windows: nothing else; setup uses the Python that comes with ComfyUI
+  - Linux: **Python 3.8 or newer** to run setup (usually already installed as `python3`)
 - An **NVIDIA or AMD** graphics card with 8 GB or more of video memory
   - NVIDIA: RTX 3060 / 3070 / 4060 or better. Tested.
   - AMD: Radeon RX 7700 XT / 7800 XT / 7900 or better, using ComfyUI's AMD (ROCm) version. Being
@@ -40,15 +41,15 @@ Three styles:
 
 1. Get Linecrafty: the green **Code** button above > **Download ZIP**, then unzip it somewhere with
    ~18 GB free (e.g. `C:\Linecrafty` or `~/linecrafty`). Or `git clone https://github.com/wisteso/linecrafty`.
-2. In a terminal (Command Prompt or PowerShell on Windows) in that folder, run:
+2. Run setup:
+   - **Windows:** double-click **`launcher-windows\setup.cmd`**.
+   - **Linux:** in a terminal in that folder, run `python3 setup.py`.
 
-   ```
-   python setup.py
-   ```
+   To point it at a specific ComfyUI install, add its folder (`setup.cmd "D:\ComfyUI_windows_portable"`
+   or `python3 setup.py ~/ComfyUI`); add `-y` to skip the download confirmation.
 
-   (On Windows you can also double-click `setup.py`. On Linux use `python3`.) To point it at a
-   specific ComfyUI install: `python setup.py /path/to/ComfyUI`; add `-y` to skip the download
-   confirmation.
+If Windows warns about running the files, right-click the zip > Properties > tick **Unblock**
+before unzipping.
 
 Setup finds your ComfyUI (Comfy Desktop, the older ComfyUI desktop app, a portable install, or on
 Linux a checkout in a common place like `~/ComfyUI`; if it can't, it asks you for the folder), checks your graphics card and memory, and downloads the local
@@ -59,15 +60,18 @@ small `vtracer` library, into this folder's `lib/`.
 
 ## Making pages
 
-Run one of the scripts in `launchers/` with your pictures as arguments, or on Windows drag the
-pictures onto the script in File Explorer:
+**Windows:** drag one or more pictures onto one of these in the `launcher-windows` folder:
 
-- **`launchers/make_coloring_page.py`**: full line art, the usual choice
-- **`launchers/make_simple_coloring_page.py`**: fewer, bolder lines
-- **`launchers/make_coloring_page_nobg.py`**: just the characters
+- **`Make Coloring Page.cmd`**: full line art, the usual choice
+- **`Make Simple Coloring Page.cmd`**: fewer, bolder lines
+- **`Make Coloring Page (no background).cmd`**: just the characters
+
+**Linux:** run the matching script in `launcher-common` with your pictures:
 
 ```
-python launchers/make_coloring_page.py photo.jpg other.png
+python3 launcher-common/make_coloring_page.py photo.jpg other.png
+python3 launcher-common/make_simple_coloring_page.py photo.jpg
+python3 launcher-common/make_coloring_page_nobg.py photo.jpg
 ```
 
 With no pictures given they convert everything in the `input` folder and move the originals to
@@ -87,7 +91,8 @@ Every run draws a slightly different version, so if you don't like one, run it a
 ## Command line
 
 `linecrafty.py` is the underlying tool (`python linecrafty.py --help` for everything). It works with
-any Python: it re-launches itself under ComfyUI's Python, which setup remembered.
+any Python: it re-launches itself under ComfyUI's Python, which setup remembered. On Windows without
+a Python of your own, use `launcher-windows\linecrafty.cmd` in place of `python linecrafty.py`.
 
 ```
 python linecrafty.py photo.jpg                       # full style -> output/
@@ -115,16 +120,18 @@ Fine-tuning:
 ## Repo layout
 
 ```
-linecrafty.py     the tool itself
-setup.py          one-time setup (finds ComfyUI, downloads models, installs the SVG tracer)
-launchers/        make_coloring_page.py and its simple / no-background variants
-input/ output/    your pictures and the finished pages (created by setup)
-models/ lib/      downloaded AI models and the SVG tracer (created by setup)
-config.json       where your ComfyUI is (written by setup)
+linecrafty.py       the tool itself
+setup.py            one-time setup (finds ComfyUI, downloads models, installs the SVG tracer)
+launcher-common/    make_coloring_page.py and its simple / no-background variants (any OS)
+launcher-windows/   setup.cmd, linecrafty.cmd and the drag-and-drop "Make Coloring Page" files
+input/ output/      your pictures and the finished pages (created by setup)
+models/ lib/        downloaded AI models and the SVG tracer (created by setup)
+config.json         where your ComfyUI is (written by setup)
 ```
 
 Everything is plain Python using only the standard library (plus numpy, Pillow and SciPy from
-ComfyUI's environment), so the same files run on Windows and Linux.
+ComfyUI's environment), so the same files run on Windows and Linux. The Windows `.cmd` files are
+thin wrappers that run them with ComfyUI's Python and keep the window open.
 
 ## How it works
 
@@ -138,7 +145,7 @@ ComfyUI's environment), so the same files run on Windows and Linux.
 4. Levels push grey to pure black or white, small specks are removed, and with `--svg` vtracer traces the SVG.
 
 `config.json` (written by setup) records which ComfyUI to use. Re-run setup if you move or
-reinstall ComfyUI, or point it somewhere specific: `python setup.py "D:\ComfyUI_windows_portable"` or `python setup.py ~/ComfyUI`.
+reinstall ComfyUI, or point it somewhere specific (see Setup).
 
 ## Models
 
@@ -163,7 +170,7 @@ The local AI models are **not** part of this repository and are **not** covered 
 downloads them from their original sources, and each has its own terms (table above). Two of them,
 **FLUX.1 Kontext [dev]** and **4x-AnimeSharp**, are licensed for **non-commercial use only**. So the
 coloring pages Linecrafty makes with them are for personal use: print them, color them, share them
-with friends, but don't sell them. By running `setup.py` you're downloading those models and
+with friends, but don't sell them. By running setup you're downloading those models and
 agreeing to their licenses.
 
 Linecrafty runs your separately installed [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
@@ -173,7 +180,7 @@ ComfyUI code. It also uses NumPy, SciPy and Pillow from ComfyUI's Python, and in
 
 ## Troubleshooting
 
-- **"Not set up yet"**: run `python setup.py`.
+- **"Not set up yet"**: run setup (`launcher-windows\setup.cmd` or `python3 setup.py`).
 - **"ComfyUI exited during startup"**: see `comfy/server.log`. ComfyUI usually needs updating; update
   it, then re-run setup.
 - **Very slow or out of memory**: close other big programs (games, browsers with many tabs).

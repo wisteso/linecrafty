@@ -51,7 +51,7 @@ CONFIG = ROOT / "config.json"
 HOST, PORT = "127.0.0.1", 8288
 URL = f"http://{HOST}:{PORT}"
 IS_WINDOWS = os.name == "nt"
-SETUP_NAME = "python setup.py"
+SETUP_NAME = r"launcher-windows\setup.cmd" if IS_WINDOWS else "python3 setup.py"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 MODEL_FOLDERS = ("diffusion_models", "text_encoders", "upscale_models", "vae", "loras")
 
@@ -181,10 +181,29 @@ def open_folder(path: Path) -> None:
         subprocess.Popen([opener, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def _is_our_server(pid: int) -> bool:
+    """True if `pid` (from server.pid) is still the ComfyUI we started. After a crash or reboot the file
+    can be stale and the number reused by an unrelated program, which must not be killed."""
+    try:
+        if IS_WINDOWS:
+            cmd = ["powershell", "-NoProfile", "-Command",
+                   f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"]
+        else:
+            if os.getpgid(pid) != pid:  # we start the server as its own process-group leader
+                return False
+            cmd = ["ps", "-o", "command=", "-p", str(pid)]
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout
+    except ProcessLookupError:
+        return False
+    except (OSError, subprocess.SubprocessError):
+        return server_up()  # can't inspect it; only stop it if our server is actually answering
+    return "main.py" in out and str(WORK) in out  # its command line names our comfy/ folder
+
+
 def stop_server(proc: subprocess.Popen | None = None) -> None:
     pid_file = WORK / "server.pid"
     pid = proc.pid if proc else (int(pid_file.read_text()) if pid_file.exists() else None)
-    if pid:
+    if pid and (proc or _is_our_server(pid)):
         if IS_WINDOWS:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
         else:
