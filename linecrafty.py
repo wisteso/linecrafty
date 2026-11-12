@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 r"""linecrafty - turn color pictures into coloring-book pages, locally.
 
 Pipeline:
@@ -7,16 +8,17 @@ Pipeline:
   4. With --svg, vtracer traces it to vectors            -> <name>_lineart.svg
 
 Usage:
-  linecrafty                                convert everything in input\ (then moved to input\done)
+  linecrafty                                convert everything in input/ (then moved to input/done)
   linecrafty photo.jpg [more.jpg ...]       convert files
-  linecrafty some\folder                    convert every image in a folder
+  linecrafty some/folder                    convert every image in a folder
   linecrafty photo.jpg --variants 3         3 different takes (different seeds)
   linecrafty photo.jpg --style all          full + simple + no-background versions
   linecrafty photo.jpg --svg                also write a vector SVG
   linecrafty --stop                         stop a server left running with --keep-server
 
-Runs with ComfyUI's own Python. setup.cmd writes config.json (where ComfyUI is) and installs
-vtracer into lib\ - nothing is installed into ComfyUI itself.
+Runs with ComfyUI's own Python (any Python can start it; it re-launches itself under the right one).
+`python setup.py` writes config.json (where ComfyUI is) and installs vtracer into lib/ - nothing is
+installed into ComfyUI itself.
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ import json
 import os
 import random
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -36,14 +39,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "lib"))  # vtracer lives here (pip --target), keeps ComfyUI's env untouched
 
-import numpy as np  # noqa: E402  (from ComfyUI's Python)
-from PIL import Image  # noqa: E402
-from scipy import ndimage  # noqa: E402
+try:  # these come from ComfyUI's Python; main() re-launches under it if we were started with another one
+    import numpy as np  # noqa: E402
+    from PIL import Image  # noqa: E402
+    from scipy import ndimage  # noqa: E402
+except ImportError:
+    np = Image = ndimage = None
 
 WORK = ROOT / "comfy"
 CONFIG = ROOT / "config.json"
 HOST, PORT = "127.0.0.1", 8288
 URL = f"http://{HOST}:{PORT}"
+IS_WINDOWS = os.name == "nt"
+SETUP_NAME = "python setup.py"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 MODEL_FOLDERS = ("diffusion_models", "text_encoders", "upscale_models", "vae", "loras")
 
@@ -71,11 +79,11 @@ STYLE_MEGAPIXELS = {"simple": 0.3}
 
 def load_config() -> dict:
     if not CONFIG.exists():
-        sys.exit("Not set up yet: run setup.cmd first.")
+        sys.exit(f"Not set up yet: run {SETUP_NAME} first.")
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     for key in ("comfy_dir", "python"):
         if not Path(cfg.get(key, "")).exists():
-            sys.exit(f"config.json: {key} = {cfg.get(key)!r} not found. Re-run setup.cmd.")
+            sys.exit(f"config.json: {key} = {cfg.get(key)!r} not found. Re-run {SETUP_NAME}.")
     return cfg
 
 
@@ -123,9 +131,11 @@ def start_server(cfg: dict) -> subprocess.Popen | None:
         "--user-directory", str(WORK / "user"),
         "--disable-all-custom-nodes", "--disable-auto-launch",
     ]
-    print("Starting the drawing engine (first start takes ~30 s; log: comfy\\server.log)...", flush=True)
-    proc = subprocess.Popen(cmd, cwd=cfg["comfy_dir"], stdout=log, stderr=subprocess.STDOUT,
-                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+    print(f"Starting the drawing engine (first start takes ~30 s; log: {WORK / 'server.log'})...", flush=True)
+    # Own process group/session so we can stop ComfyUI and anything it spawned together.
+    group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WINDOWS
+             else {"start_new_session": True})
+    proc = subprocess.Popen(cmd, cwd=cfg["comfy_dir"], stdout=log, stderr=subprocess.STDOUT, **group)
     (WORK / "server.pid").write_text(str(proc.pid))
     for _ in range(300):
         if proc.poll() is not None:
@@ -133,14 +143,52 @@ def start_server(cfg: dict) -> subprocess.Popen | None:
         if server_up():
             return proc
         time.sleep(1)
-    sys.exit("ComfyUI did not come up within 5 minutes; see comfy\\server.log")
+    sys.exit(f"ComfyUI did not come up within 5 minutes; see {WORK / 'server.log'}")
+
+
+def _kill_group(pid: int, proc: subprocess.Popen | None = None) -> None:
+    """Politely stop the server's process group, then force it if it lingers."""
+    def gone() -> bool:
+        if proc is not None:
+            proc.poll()  # reap our own child, otherwise the dead group leader lingers as a zombie
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):  # macOS reports a zombie-only group as EPERM
+            return True
+        return False
+
+    try:
+        pgid = os.getpgid(pid)
+    except ProcessLookupError:
+        return
+    for sig, wait in ((signal.SIGTERM, 10), (signal.SIGKILL, 2)):
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        for _ in range(wait * 10):
+            if gone():
+                return
+            time.sleep(0.1)
+
+
+def open_folder(path: Path) -> None:
+    if IS_WINDOWS:
+        os.startfile(path)
+        return
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    if shutil.which(opener):
+        subprocess.Popen([opener, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def stop_server(proc: subprocess.Popen | None = None) -> None:
     pid_file = WORK / "server.pid"
     pid = proc.pid if proc else (int(pid_file.read_text()) if pid_file.exists() else None)
     if pid:
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        else:
+            _kill_group(pid, proc)
     pid_file.unlink(missing_ok=True)
 
 
@@ -250,7 +298,29 @@ def collect(inputs: list[str]) -> list[Path]:
     return files
 
 
-def main() -> None:
+def run_under_comfy_python(argv: list[str]) -> None:
+    """Re-run this script with ComfyUI's Python (which has numpy/Pillow/scipy), then exit with its result.
+
+    That's how any Python can start linecrafty: `python linecrafty.py photo.jpg` just works after setup.
+    """
+    if os.environ.get("LINECRAFTY_CHILD") or not CONFIG.exists():
+        return
+    try:
+        py = json.loads(CONFIG.read_text(encoding="utf-8")).get("python", "")
+    except (OSError, ValueError):
+        return
+    if not py or os.path.abspath(py) == os.path.abspath(sys.executable) or not Path(py).exists():
+        return
+    env = dict(os.environ, LINECRAFTY_CHILD="1")
+    try:
+        sys.exit(subprocess.call([py, "-s", str(Path(__file__).resolve()), *argv], env=env))
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    run_under_comfy_python(argv)
     ap = argparse.ArgumentParser(
         prog="linecrafty",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -263,13 +333,13 @@ def main() -> None:
                "  linecrafty photo.jpg --style all --svg     all three styles, plus SVG files\n"
                "  linecrafty photo.jpg --variants 3          three different takes to choose from\n"
                '  linecrafty photo.jpg --extra "Leave out the dog."\n'
-               "  linecrafty C:\\pics -o C:\\pages             a whole folder into another folder\n"
+               "  linecrafty pics -o pages                   a whole folder into another folder\n"
                "  linecrafty --stop                          unload a server kept with --keep-server",
     )
     ap.add_argument("inputs", nargs="*", metavar="PICTURE",
                     help="picture files (png, jpg, webp, bmp) and/or folders of them. "
                          "If none are given, converts everything in the input folder and then moves "
-                         "those pictures to input\\done.")
+                         "those pictures to input/done.")
 
     g = ap.add_argument_group("output")
     g.add_argument("-o", "--out", metavar="FOLDER", default=str(ROOT / "output"),
@@ -288,7 +358,7 @@ def main() -> None:
                         "(posters, editing in Inkscape/Illustrator). Adds a few seconds per page. "
                         "Off by default.")
     g.add_argument("--open", action="store_true",
-                   help="open the output folder in Explorer when finished.")
+                   help="open the output folder when finished.")
 
     g = ap.add_argument_group("drawing (what the local AI draws)")
     g.add_argument("--extra", metavar='"TEXT"', default="",
@@ -333,7 +403,7 @@ def main() -> None:
                         "skips the ~30 s startup. Uses a lot of memory until you run --stop.")
     g.add_argument("--stop", action="store_true",
                    help="stop an engine left running by --keep-server, free its memory, and exit.")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     if not 0 <= a.black < a.white <= 255:
         ap.error("--black and --white must be between 0 and 255, with --black below --white")
 
@@ -342,12 +412,14 @@ def main() -> None:
         print("stopped")
         return
     cfg = load_config()
+    if np is None:
+        sys.exit(f"numpy/Pillow/scipy not available in this Python. Run {SETUP_NAME} to (re)configure.")
 
     inbox = ROOT / "input"
     from_inbox = not a.inputs
     files = collect(a.inputs or [str(inbox)])
     if not files:
-        print(f"No pictures to convert. Put some in {inbox} or drag them onto 'Make Coloring Page.cmd'.")
+        print(f"No pictures to convert. Put some in {inbox} or pass file names.")
         return
 
     styles = list(STYLES) if a.style == "all" else [s.strip() for s in a.style.split(",") if s.strip()]
@@ -385,7 +457,7 @@ def main() -> None:
             png = out_dir / f"{stem}_lineart.png"
             Image.fromarray(clean).save(png, dpi=(600, 600))
             if a.svg and not to_svg(png, out_dir / f"{stem}_lineart.svg") and not svg_warned:
-                print(" (SVG skipped: vtracer not installed; re-run setup.cmd)", end="")
+                print(f" (SVG skipped: vtracer not installed; re-run {SETUP_NAME})", end="")
                 svg_warned = True
             for p in res.values():
                 p.unlink(missing_ok=True)
@@ -401,7 +473,7 @@ def main() -> None:
             stop_server(proc)
     print(f"Finished. Pages are in: {out_dir}")
     if a.open:
-        os.startfile(out_dir)
+        open_folder(out_dir)
 
 
 if __name__ == "__main__":
