@@ -4,7 +4,7 @@
 Safe to re-run any time (skips what is already done, resumes interrupted downloads).
 Works on Windows, Linux and macOS with any Python 3.8+ (standard library only).
 
-Usage: python setup.py [-y] [path/to/ComfyUI]     (Windows: launcher-windows\\setup.cmd [-y] [path])
+Usage: python setup.py [-y] [path/to/ComfyUI]     (or launcher-windows\\setup.cmd / launcher-linux/setup.sh, same arguments)
   -y, --yes     don't ask before downloading
   path          your ComfyUI folder (the one containing main.py, or its parent)
 """

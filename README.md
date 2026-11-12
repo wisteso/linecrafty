@@ -19,62 +19,54 @@ Three styles:
 
 ## What you need
 
-- Windows 10/11 or Linux
-  - Windows: nothing else; setup uses the Python that comes with ComfyUI
-  - Linux: **Python 3.8 or newer** to run setup (usually already installed as `python3`)
+- **Windows or Linux.** macOS isn't supported yet.
 - An **NVIDIA or AMD** graphics card with 8 GB or more of video memory
   - NVIDIA: RTX 3060 / 3070 / 4060 or better. Tested.
   - AMD: Radeon RX 7700 XT / 7800 XT / 7900 or better, using ComfyUI's AMD (ROCm) version. Being
-    tested; please report how it goes. On Linux, use a PyTorch build that matches your card
-    (CUDA for NVIDIA, ROCm for AMD).
+    tested; please report how it goes.
 - System memory (RAM):
   - **32 GB recommended**
   - **16 GB minimum**: should work, but pages take longer; close other programs while it runs.
     Not yet tested; we'd like to hear how it goes.
-- About 18 GB of free disk space for the local AI models
-- **ComfyUI**. On Windows the easiest is the [Comfy Desktop app](https://www.comfy.org/download):
-  install it and open it once so it finishes setting itself up. You can close it afterwards.
-  On Linux, a normal [ComfyUI](https://github.com/comfyanonymous/ComfyUI) checkout with its Python
-  environment (e.g. `~/ComfyUI/venv`) works.
+- About 18 GB of free disk space for the local AI models, plus room for ComfyUI itself. ComfyUI's
+  size depends a lot on your system: about 7 GB on Windows, and up to 20-35 GB on Linux (see the
+  Linux guide).
+- **[ComfyUI](https://www.comfy.org/download)**, the engine that runs the local AI model. The
+  [Comfy Desktop app](https://www.comfy.org/download) is the easiest: install it and open it once
+  so it finishes setting itself up. You can close it afterwards.
+
+Your system's guide has the details:
+
+| System | Guide | Status |
+|---|---|---|
+| Windows 10 / 11 | [launcher-windows/windows.md](launcher-windows/windows.md) | Tested |
+| Linux | [launcher-linux/linux.md](launcher-linux/linux.md) | Tested with AMD |
+| macOS | [launcher-macos/macos.md](launcher-macos/macos.md) | Not supported yet |
 
 ## Setup (once)
 
 1. Get Linecrafty: the green **Code** button above > **Download ZIP**, then unzip it somewhere with
-   ~18 GB free (e.g. `C:\Linecrafty` or `~/linecrafty`). Or `git clone https://github.com/wisteso/linecrafty`.
-2. Run setup:
-   - **Windows:** double-click **`launcher-windows\setup.cmd`**.
-   - **Linux:** in a terminal in that folder, run `python3 setup.py`.
+   ~18 GB free. Or `git clone https://github.com/wisteso/linecrafty`.
+2. Run setup as your system's guide describes: `launcher-windows\setup.cmd` on Windows,
+   `launcher-linux/setup.sh` on Linux.
 
-   To point it at a specific ComfyUI install, add its folder (`setup.cmd "D:\ComfyUI_windows_portable"`
-   or `python3 setup.py ~/ComfyUI`); add `-y` to skip the download confirmation.
-
-If Windows warns about running the files, right-click the zip > Properties > tick **Unblock**
-before unzipping.
-
-Setup finds your ComfyUI (Comfy Desktop, the older ComfyUI desktop app, a portable install, or on
-Linux a checkout in a common place like `~/ComfyUI`; if it can't, it asks you for the folder), checks your graphics card and memory, and downloads the local
-AI models (~17.7 GB).
-It asks before downloading, verifies every file against its SHA-256 hash, and resumes if interrupted:
-just run setup again. It never changes your ComfyUI install; the only thing it installs is the
-small `vtracer` library, into this folder's `lib/`.
+Setup finds your ComfyUI (if it can't, it asks you for the folder), checks your graphics card and
+memory, and downloads the local AI models (~17.7 GB). It asks before downloading, verifies every
+file against its SHA-256 hash, and resumes if interrupted: just run setup again. It never changes
+your ComfyUI install; the only thing it installs is the small `vtracer` library, into this folder's
+`lib/`.
 
 ## Making pages
 
-**Windows:** drag one or more pictures onto one of these in the `launcher-windows` folder:
+There's one launcher per style, so you don't need any options for everyday use:
 
-- **`Make Coloring Page.cmd`**: full line art, the usual choice
-- **`Make Simple Coloring Page.cmd`**: fewer, bolder lines
-- **`Make Coloring Page (no background).cmd`**: just the characters
+| Style | Windows (drag pictures onto it) | Linux (`python3 ...` with pictures) |
+|---|---|---|
+| full | `Make Coloring Page.cmd` | `launcher-common/make_coloring_page.py` |
+| simple | `Make Simple Coloring Page.cmd` | `launcher-common/make_simple_coloring_page.py` |
+| nobg | `Make Coloring Page (no background).cmd` | `launcher-common/make_coloring_page_nobg.py` |
 
-**Linux:** run the matching script in `launcher-common` with your pictures:
-
-```
-python3 launcher-common/make_coloring_page.py photo.jpg other.png
-python3 launcher-common/make_simple_coloring_page.py photo.jpg
-python3 launcher-common/make_coloring_page_nobg.py photo.jpg
-```
-
-With no pictures given they convert everything in the `input` folder and move the originals to
+Run with no pictures, they convert everything in the `input` folder and move the originals to
 `input/done`.
 
 A page takes about 2-4 minutes (simple: about 1 minute) on an 8 GB card. When it's done, the
@@ -91,8 +83,8 @@ Every run draws a slightly different version, so if you don't like one, run it a
 ## Command line
 
 `linecrafty.py` is the underlying tool (`python linecrafty.py --help` for everything). It works with
-any Python: it re-launches itself under ComfyUI's Python, which setup remembered. On Windows without
-a Python of your own, use `launcher-windows\linecrafty.cmd` in place of `python linecrafty.py`.
+any Python: it re-launches itself under ComfyUI's Python, which setup remembered. (Windows without a
+Python of your own: use `launcher-windows\linecrafty.cmd` instead; see the Windows guide.)
 
 ```
 python linecrafty.py photo.jpg                       # full style -> output/
@@ -123,15 +115,17 @@ Fine-tuning:
 linecrafty.py       the tool itself
 setup.py            one-time setup (finds ComfyUI, downloads models, installs the SVG tracer)
 launcher-common/    make_coloring_page.py and its simple / no-background variants (any OS)
-launcher-windows/   setup.cmd, linecrafty.cmd and the drag-and-drop "Make Coloring Page" files
+launcher-windows/   windows.md, setup.cmd, linecrafty.cmd and the drag-and-drop .cmd files
+launcher-linux/     linux.md and setup.sh
+launcher-macos/     macos.md (not supported yet)
 input/ output/      your pictures and the finished pages (created by setup)
 models/ lib/        downloaded AI models and the SVG tracer (created by setup)
 config.json         where your ComfyUI is (written by setup)
 ```
 
 Everything is plain Python using only the standard library (plus numpy, Pillow and SciPy from
-ComfyUI's environment), so the same files run on Windows and Linux. The Windows `.cmd` files are
-thin wrappers that run them with ComfyUI's Python and keep the window open.
+ComfyUI's environment), so the same files run on every system. The `.cmd` and `.sh` files are thin
+wrappers that find a Python to run them with.
 
 ## How it works
 
@@ -180,9 +174,9 @@ ComfyUI code. It also uses NumPy, SciPy and Pillow from ComfyUI's Python, and in
 
 ## Troubleshooting
 
-- **"Not set up yet"**: run setup (`launcher-windows\setup.cmd` or `python3 setup.py`).
+- **"Not set up yet"**: run setup (see your system's guide).
 - **"ComfyUI exited during startup"**: see `comfy/server.log`. ComfyUI usually needs updating; update
   it, then re-run setup.
 - **Very slow or out of memory**: close other big programs (games, browsers with many tabs).
 - **Moved or reinstalled ComfyUI**: re-run setup.
-- **Linux: the output folder doesn't open**: it needs `xdg-open`; the pages are still in `output/`.
+- System-specific problems are in your system's guide.

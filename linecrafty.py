@@ -51,7 +51,8 @@ CONFIG = ROOT / "config.json"
 HOST, PORT = "127.0.0.1", 8288
 URL = f"http://{HOST}:{PORT}"
 IS_WINDOWS = os.name == "nt"
-SETUP_NAME = r"launcher-windows\setup.cmd" if IS_WINDOWS else "python3 setup.py"
+SETUP_NAME = (r"launcher-windows\setup.cmd" if IS_WINDOWS else
+              "python3 setup.py" if sys.platform == "darwin" else "launcher-linux/setup.sh")
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 MODEL_FOLDERS = ("diffusion_models", "text_encoders", "upscale_models", "vae", "loras")
 
